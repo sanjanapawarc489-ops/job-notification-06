@@ -875,6 +875,12 @@
             .component-grid {
                 grid-template-columns: 1fr;
             }
+
+            .toast {
+                bottom: var(--space-2);
+                right: var(--space-2);
+                left: var(--space-2);
+            }
         }
 
         /* ==========================================
@@ -1206,9 +1212,138 @@
             margin-bottom: var(--space-2);
         }
 
+        /* ==========================================
+           STATUS BUTTON & TOAST STYLES
+           ========================================== */
+
+        .status-button-group {
+            display: flex;
+            gap: 4px;
+            margin: var(--space-2) 0 var(--space-2) 0;
+            border: 1px solid var(--color-border);
+            border-radius: 4px;
+            overflow: hidden;
+            background-color: var(--color-hover);
+        }
+
+        .status-button {
+            flex: 1;
+            padding: 6px 12px;
+            border: none;
+            background-color: transparent;
+            color: var(--color-text-secondary);
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all var(--transition-standard);
+            text-align: center;
+            white-space: nowrap;
+            border-right: 1px solid var(--color-border);
+        }
+
+        .status-button:last-child {
+            border-right: none;
+        }
+
+        .status-button:hover {
+            background-color: var(--color-background);
+        }
+
+        .status-button.active-not-applied {
+            background-color: var(--color-text-primary);
+            color: var(--color-surface-white);
+        }
+
+        .status-button.active-applied {
+            background-color: #2196F3;
+            color: var(--color-surface-white);
+        }
+
+        .status-button.active-rejected {
+            background-color: #F44336;
+            color: var(--color-surface-white);
+        }
+
+        .status-button.active-selected {
+            background-color: var(--color-success);
+            color: var(--color-surface-white);
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .status-badge-not-applied {
+            background-color: var(--color-hover);
+            color: var(--color-text-secondary);
+        }
+
+        .status-badge-applied {
+            background-color: #E3F2FD;
+            color: #1976D2;
+        }
+
+        .status-badge-rejected {
+            background-color: #FFEBEE;
+            color: #D32F2F;
+        }
+
+        .status-badge-selected {
+            background-color: #E8F5E9;
+            color: #388E3C;
+        }
+
+        /* TOAST NOTIFICATIONS */
+        .toast {
+            position: fixed;
+            bottom: var(--space-4);
+            right: var(--space-4);
+            background-color: var(--color-text-primary);
+            color: var(--color-surface-white);
+            padding: var(--space-3) var(--space-4);
+            border-radius: 4px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            font-size: 14px;
+            font-weight: 500;
+            z-index: 2000;
+            animation: slideIn var(--transition-long) ease-in-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideOut {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+            to {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+        }
+
+        .toast.hide {
+            animation: slideOut var(--transition-long) ease-in-out forwards;
+        }
+
         @media (max-width: 768px) {
             .filter-bar {
-                grid-template-columns: 1fr;
+                grid-template-columns: 1fr !important;
                 gap: var(--space-2);
             }
 
@@ -1337,6 +1472,7 @@
             mode: '',
             experience: '',
             source: '',
+            status: '',
             sort: 'latest',
             showOnlyMatches: false
         };
@@ -1352,6 +1488,78 @@
 
         function isSaved(jobId) {
             return getSavedJobs().includes(jobId);
+        }
+
+        // ==========================================
+        // JOB STATUS TRACKING
+        // ==========================================
+
+        function getJobStatus(jobId) {
+            const statuses = localStorage.getItem('jobTrackerStatus');
+            const statusMap = statuses ? JSON.parse(statuses) : {};
+            return statusMap[jobId] || 'Not Applied';
+        }
+
+        function setJobStatus(jobId, status) {
+            const statuses = localStorage.getItem('jobTrackerStatus');
+            const statusMap = statuses ? JSON.parse(statuses) : {};
+            
+            if (status === 'Not Applied') {
+                delete statusMap[jobId];
+            } else {
+                statusMap[jobId] = status;
+            }
+            
+            localStorage.setItem('jobTrackerStatus', JSON.stringify(statusMap));
+            
+            // Track status update for digest
+            trackStatusUpdate(jobId, status);
+        }
+
+        function trackStatusUpdate(jobId, status) {
+            const today = getTodayDate();
+            const key = `jobTrackerStatusUpdates_${today}`;
+            const updates = localStorage.getItem(key);
+            const updatesList = updates ? JSON.parse(updates) : [];
+            
+            const job = JOBS_DATASET.find(j => j.id === jobId);
+            if (job) {
+                // Remove existing update for this job if any
+                const filtered = updatesList.filter(u => u.jobId !== jobId);
+                
+                // Add new update at the beginning
+                filtered.unshift({
+                    jobId: jobId,
+                    jobTitle: job.title,
+                    jobCompany: job.company,
+                    status: status,
+                    timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
+                });
+                
+                // Keep only last 20 updates
+                localStorage.setItem(key, JSON.stringify(filtered.slice(0, 20)));
+            }
+        }
+
+        function getStatusUpdates() {
+            const today = getTodayDate();
+            const key = `jobTrackerStatusUpdates_${today}`;
+            const updates = localStorage.getItem(key);
+            return updates ? JSON.parse(updates) : [];
+        }
+
+        function showToast(message) {
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.textContent = message;
+            document.body.appendChild(toast);
+
+            setTimeout(() => {
+                toast.classList.add('hide');
+                setTimeout(() => {
+                    document.body.removeChild(toast);
+                }, 200);
+            }, 3000);
         }
 
         function toggleSaveJob(jobId) {
@@ -1395,6 +1603,11 @@
             // Source filter
             if (filterState.source) {
                 filtered = filtered.filter(job => job.source === filterState.source);
+            }
+
+            // Status filter
+            if (filterState.status) {
+                filtered = filtered.filter(job => getJobStatus(job.id) === filterState.status);
             }
 
             // Show only matches filter
@@ -1660,9 +1873,17 @@
 
         function renderJobCard(job) {
             const saved = isSaved(job.id);
+            const currentStatus = getJobStatus(job.id);
             const matchScore = calculateMatchScore(job);
             const scoreColor = getMatchScoreBadgeColor(matchScore);
             const prefs = parsePreferences();
+
+            const getStatusClass = (status) => {
+                if (status === 'Applied') return 'active-applied';
+                if (status === 'Rejected') return 'active-rejected';
+                if (status === 'Selected') return 'active-selected';
+                return 'active-not-applied';
+            };
 
             return `
                 <div class="job-card">
@@ -1684,6 +1905,15 @@
                     </div>
                     <p class="job-salary">${job.salaryRange}</p>
                     <p style="font-size: 13px; color: var(--color-text-tertiary); margin: 0;">${job.postedDaysAgo} days ago</p>
+                    
+                    <!-- Status Button Group -->
+                    <div class="status-button-group">
+                        <button class="status-button ${currentStatus === 'Not Applied' ? getStatusClass('Not Applied') : ''}" onclick="updateJobStatus(${job.id}, 'Not Applied')">Not Applied</button>
+                        <button class="status-button ${currentStatus === 'Applied' ? getStatusClass('Applied') : ''}" onclick="updateJobStatus(${job.id}, 'Applied')">Applied</button>
+                        <button class="status-button ${currentStatus === 'Rejected' ? getStatusClass('Rejected') : ''}" onclick="updateJobStatus(${job.id}, 'Rejected')">Rejected</button>
+                        <button class="status-button ${currentStatus === 'Selected' ? getStatusClass('Selected') : ''}" onclick="updateJobStatus(${job.id}, 'Selected')">Selected</button>
+                    </div>
+
                     <div class="job-actions">
                         <button class="btn-view" onclick="openJobModal(${job.id})">View</button>
                         <button class="btn-save ${saved ? 'saved' : ''}" onclick="saveJob(${job.id}, event)">${saved ? '✓ Saved' : 'Save'}</button>
@@ -1691,6 +1921,12 @@
                     </div>
                 </div>
             `;
+        }
+
+        function updateJobStatus(jobId, status) {
+            setJobStatus(jobId, status);
+            showToast(`Status updated: ${status}`);
+            renderDashboardPage();
         }
 
         function openJobModal(jobId) {
@@ -1775,7 +2011,7 @@
             const prefs = parsePreferences();
 
             return `
-                <div class="filter-bar">
+                <div class="filter-bar" style="grid-template-columns: repeat(7, 1fr);">
                     <div class="filter-group">
                         <label class="filter-label">Search</label>
                         <input type="text" class="filter-input" placeholder="Job title, company..." id="searchFilter" value="${filterState.search}" onchange="updateFilter('search', this.value); renderDashboardPage();">
@@ -1806,6 +2042,16 @@
                         <select class="filter-select" id="sourceFilter" onchange="updateFilter('source', this.value); renderDashboardPage();">
                             <option value="">All Sources</option>
                             ${sources.map(src => `<option value="${src}" ${filterState.source === src ? 'selected' : ''}>${src}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label class="filter-label">Status</label>
+                        <select class="filter-select" id="statusFilter" onchange="updateFilter('status', this.value); renderDashboardPage();">
+                            <option value="">All Status</option>
+                            <option value="Not Applied" ${filterState.status === 'Not Applied' ? 'selected' : ''}>Not Applied</option>
+                            <option value="Applied" ${filterState.status === 'Applied' ? 'selected' : ''}>Applied</option>
+                            <option value="Rejected" ${filterState.status === 'Rejected' ? 'selected' : ''}>Rejected</option>
+                            <option value="Selected" ${filterState.status === 'Selected' ? 'selected' : ''}>Selected</option>
                         </select>
                     </div>
                     <div class="filter-group">
@@ -1984,6 +2230,36 @@
                             <p style="margin: var(--space-2) 0;">This digest was generated based on your preferences.</p>
                             <p style="margin: var(--space-1) 0; color: #888888; font-style: italic;">Demo Mode: Daily 9AM trigger simulated manually.</p>
                         </div>
+
+                        <!-- Recent Status Updates -->
+                        ${getStatusUpdates().length > 0 ? `
+                        <div style="margin-top: var(--space-4); padding-top: var(--space-3); border-top: 1px solid var(--color-border);">
+                            <h3 style="font-family: var(--font-serif); font-size: 20px; font-weight: 700; color: var(--color-text-primary); margin: 0 0 var(--space-2) 0;">Recent Status Updates</h3>
+                            <div style="display: flex; flex-direction: column; gap: var(--space-2);">
+                                ${getStatusUpdates().slice(0, 10).map(update => {
+                                    const statusClass = {
+                                        'Applied': 'status-badge-applied',
+                                        'Rejected': 'status-badge-rejected',
+                                        'Selected': 'status-badge-selected',
+                                        'Not Applied': 'status-badge-not-applied'
+                                    }[update.status] || 'status-badge-not-applied';
+                                    
+                                    return `
+                                        <div style="display: flex; justify-content: space-between; align-items: center; padding: var(--space-2); background-color: var(--color-hover); border-radius: 4px;">
+                                            <div>
+                                                <p style="font-weight: 600; color: var(--color-text-primary); margin: 0 0 4px 0;">${update.jobTitle}</p>
+                                                <p style="font-size: 13px; color: var(--color-text-secondary); margin: 0;">${update.jobCompany}</p>
+                                            </div>
+                                            <div style="text-align: right;">
+                                                <span class="status-badge ${statusClass}">${update.status}</span>
+                                                <p style="font-size: 12px; color: var(--color-text-tertiary); margin: var(--space-1) 0 0 0;">${update.timestamp}</p>
+                                            </div>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+                        ` : ''}
 
                         <!-- Action Buttons -->
                         <div style="display: flex; gap: var(--space-2); margin-top: var(--space-4);">
